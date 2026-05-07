@@ -6,7 +6,7 @@ import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
-import { normalizeIngredientName } from '../src/lib/nutrition/units';
+import { normalizeIngredientName } from './src/lib/nutrition/units';
 
 const STAPLES: Array<{
   name: string;
