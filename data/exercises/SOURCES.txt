@@ -1,0 +1,14 @@
+Exercise dataset source: wger (https://wger.de)
+
+- Data is fetched via the public REST API (https://wger.de/api/v2/), not by scraping HTML.
+- wger software is AGPL-3.0; API content is community-contributed under licenses attached per exercise/image.
+- Typical image/text licenses include Creative Commons (e.g. CC-BY-SA). See each record's licenseType, licenseUrl, attribution fields.
+- Respect rate limits; use the provided scripts for refresh instead of hammering the API from the browser.
+
+Do not redistribute downloaded media in violation of the license shown on each asset.
+
+Refresh workflow (from repo root):
+- npm run exercises:setup   (once: Python venv + requests)
+- npm run exercises:fetch   (regenerate data/exercises/exercises.json)
+- npm run exercises:download-media   (optional: cache images under public/exercises/media/)
+- npm run exercises:validate   (validate JSON; uses system python3)

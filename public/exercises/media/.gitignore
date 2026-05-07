@@ -1,0 +1,3 @@
+# Optional local cache from scripts/exercises/download_media.py — do not commit binaries
+*
+!.gitignore

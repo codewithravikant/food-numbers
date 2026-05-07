@@ -1,0 +1,25 @@
+.git
+.gitignore
+.DS_Store
+
+# Cursor / editor
+.cursor
+.vscode
+
+# Node / Next build artifacts
+node_modules
+.next
+out
+dist
+*.tsbuildinfo
+
+# Env files / secrets
+.env
+.env.*
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+

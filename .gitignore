@@ -1,0 +1,26 @@
+.DS_Store
+
+# Cursor / VS Code
+.cursor/
+.cursorignore
+.vscode/
+
+# Cursor local artifacts (often outside repo, but ignore if present)
+agent-transcripts/
+terminals/
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+dist/
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Env files
+.env
+.env.*
+
