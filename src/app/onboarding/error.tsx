@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { AlertTriangle } from 'lucide-react';
+import Link from 'next/link';
 
 export default function OnboardingError({
   error,
@@ -25,8 +26,8 @@ export default function OnboardingError({
         </p>
         <div className="flex justify-center gap-3">
           <Button onClick={reset}>Try Again</Button>
-          <Button variant="outline" onClick={() => (window.location.href = '/')}>
-            Go Home
+          <Button asChild variant="outline">
+            <Link href="/">Back to Home</Link>
           </Button>
         </div>
       </div>
