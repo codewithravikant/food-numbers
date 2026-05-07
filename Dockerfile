@@ -6,8 +6,8 @@ RUN apk add --no-cache libc6-compat openssl
 WORKDIR /app
 
 COPY package.json package-lock.json* ./
-# Use BuildKit cache for faster rebuilds (Docker Desktop supports this).
-RUN --mount=type=cache,id=cacheKey-npm,target=/root/.npm npm ci --legacy-peer-deps --no-audit --no-fund
+# Note: Railway's Docker builder rejects BuildKit cache mounts, so keep this portable.
+RUN npm ci --legacy-peer-deps --no-audit --no-fund
 
 # Rebuild the source code only when needed
 FROM base AS builder
@@ -67,7 +67,7 @@ COPY --from=builder /app/node_modules/@prisma/adapter-pg ./node_modules/@prisma/
 
 # Install Prisma CLI + dotenv for runtime migrations.
 # Prisma is usually a devDependency, so we temporarily override NODE_ENV.
-RUN --mount=type=cache,id=cacheKey-npm,target=/root/.npm NODE_ENV=development npm install --no-save prisma dotenv --legacy-peer-deps --no-audit --no-fund
+RUN NODE_ENV=development npm install --no-save prisma dotenv --legacy-peer-deps --no-audit --no-fund
 
 # Copy startup script
 COPY --chown=nextjs:nodejs start.sh ./start.sh
