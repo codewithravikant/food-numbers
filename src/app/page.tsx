@@ -3,7 +3,7 @@
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
@@ -56,12 +56,30 @@ const steps = [
 export default function LandingPage() {
   const { status } = useSession();
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   useEffect(() => {
     if (status === 'authenticated') {
-      router.push('/home');
+      if (searchParams.get('stay') === '1') return;
+
+      (async () => {
+        try {
+          const res = await fetch('/api/profile', { method: 'GET', cache: 'no-store' });
+          if (res.ok) {
+            router.push('/home');
+            return;
+          }
+          if (res.status === 404) {
+            router.push('/onboarding');
+            return;
+          }
+          router.push('/home');
+        } catch {
+          router.push('/home');
+        }
+      })();
     }
-  }, [status, router]);
+  }, [status, router, searchParams]);
 
   if (status === 'loading') return null;
   if (status === 'authenticated') return null;

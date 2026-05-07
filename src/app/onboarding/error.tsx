@@ -27,7 +27,7 @@ export default function OnboardingError({
         <div className="flex justify-center gap-3">
           <Button onClick={reset}>Try Again</Button>
           <Button asChild variant="outline">
-            <Link href="/">Back to Home</Link>
+            <Link href="/?stay=1">Back to Home</Link>
           </Button>
         </div>
       </div>
