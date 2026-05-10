@@ -3,9 +3,10 @@ import { config } from "dotenv";
 import { resolve } from "node:path";
 import { defineConfig } from "prisma/config";
 
-// Load from project root (host: use port 5433 — see docker-compose.yml `5433:5432`)
-config({ path: resolve(process.cwd(), ".env") });
-config({ path: resolve(process.cwd(), ".env.local"), override: true });
+// Load from project root (host: use port 5433 — see docker-compose.yml `5433:5432`).
+// quiet: avoids dotenv v17 "◇ injected env…" / dotenvx tips on stderr (Railway logs them as errors).
+config({ path: resolve(process.cwd(), ".env"), quiet: true });
+config({ path: resolve(process.cwd(), ".env.local"), override: true, quiet: true });
 
 function getDatabaseUrl(): string {
   const url = process.env.DATABASE_URL?.trim();

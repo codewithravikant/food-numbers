@@ -7,6 +7,8 @@ import './globals.css';
 const geistSans = Geist({
   variable: '--font-geist-sans',
   subsets: ['latin'],
+  /** Reduces "preloaded font not used" on client-navigated routes (e.g. /signup) where LCP differs. */
+  preload: false,
 });
 
 const geistMono = Geist_Mono({

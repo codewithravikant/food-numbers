@@ -23,6 +23,8 @@ export function SignupForm({ showGithub = true, showGoogle = true }: SignupFormP
   const hasOAuth = showGithub || showGoogle;
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
+  /** false when API created the account but outbound email failed (e.g. SMTP not set on Railway). */
+  const [verificationEmailSent, setVerificationEmailSent] = useState(true);
   const [resendEmail, setResendEmail] = useState('');
   const [resendLoading, setResendLoading] = useState(false);
 
@@ -55,12 +57,23 @@ export function SignupForm({ showGithub = true, showGoogle = true }: SignupFormP
         return;
       }
 
+      const sent = result.emailSent !== false;
+      setVerificationEmailSent(sent);
+      setResendEmail(data.email);
       setSuccess(true);
-      toast({
-        title: 'Account created!',
-        description: result.message,
-        variant: 'success',
-      });
+      if (sent) {
+        toast({
+          title: 'Account created!',
+          description: result.message,
+          variant: 'success',
+        });
+      } else {
+        toast({
+          title: 'Account created — email not sent',
+          description: result.message,
+          variant: 'default',
+        });
+      }
     } finally {
       setLoading(false);
     }
@@ -128,8 +141,8 @@ export function SignupForm({ showGithub = true, showGoogle = true }: SignupFormP
         title: 'Request received',
         description:
           typeof data.message === 'string'
-            ? `${data.message} Check spam. If nothing arrives, add RESEND_API_KEY or SMTP_* to .env, restart the app, and use the exact email you registered with.`
-            : 'Check spam and your .env email settings.',
+            ? `${data.message} Check spam. If nothing arrives, set SMTP_HOST, SMTP_USER, SMTP_PASS (and EMAIL_FROM) on the server, redeploy, and use the exact email you registered with.`
+            : 'Check spam and your server SMTP settings.',
       });
     } catch {
       toast({ title: 'Request failed', description: 'Please try again.', variant: 'destructive' });
@@ -141,18 +154,53 @@ export function SignupForm({ showGithub = true, showGoogle = true }: SignupFormP
   if (success) {
     return (
       <Card>
-        <CardContent className="py-8 text-center space-y-3">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
-            <svg className="h-6 w-6 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-            </svg>
-          </div>
-          <h3 className="text-lg font-semibold">Check your email</h3>
-          <p className="text-sm text-muted-foreground">
-            We&apos;ve sent a verification link to your email address. Click the link to activate your account.
-          </p>
+        <CardContent className="py-8 text-center space-y-4">
+          {verificationEmailSent ? (
+            <>
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
+                <svg className="h-6 w-6 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-semibold">Check your email</h3>
+              <p className="text-sm text-muted-foreground">
+                We&apos;ve sent a verification link to your email address. Click the link to activate your account.
+              </p>
+            </>
+          ) : (
+            <>
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-amber-500/15">
+                <Mail className="h-6 w-6 text-amber-500" />
+              </div>
+              <h3 className="text-lg font-semibold">Account created</h3>
+              <p className="text-sm text-muted-foreground text-left">
+                We couldn&apos;t send the verification email (usually missing or invalid SMTP on the server). Your
+                account is saved — after SMTP is configured, use <span className="font-medium text-foreground">Resend
+                link</span> with the email below.
+              </p>
+              <form onSubmit={handleResendVerification} className="flex flex-col gap-2 sm:flex-row sm:items-end text-left">
+                <div className="flex-1 min-w-0">
+                  <label htmlFor="signup-success-resend-email" className="sr-only">
+                    Email for resend verification
+                  </label>
+                  <Input
+                    id="signup-success-resend-email"
+                    type="email"
+                    autoComplete="email"
+                    value={resendEmail}
+                    onChange={(e) => setResendEmail(e.target.value)}
+                  />
+                </div>
+                <Button type="submit" variant="outline" loading={resendLoading} className="shrink-0">
+                  Resend link
+                </Button>
+              </form>
+            </>
+          )}
           <Link href="/login">
-            <Button variant="outline" className="mt-4">Back to login</Button>
+            <Button variant="outline" className="mt-2">
+              Back to login
+            </Button>
           </Link>
         </CardContent>
       </Card>

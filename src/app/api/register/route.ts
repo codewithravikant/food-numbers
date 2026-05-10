@@ -28,11 +28,14 @@ export async function POST(request: Request) {
       await sendVerificationEmail(email, token);
     } catch (emailError) {
       console.error('Failed to send verification email:', emailError);
-      await prisma.verificationToken.deleteMany({ where: { userId: user.id } });
-      await prisma.user.delete({ where: { id: user.id } });
-      throw new ApiError(
-        503,
-        'We could not deliver your verification email. Please try again once email service is available.'
+      // Keep the user and token so they can use "Resend verification" once SMTP is fixed.
+      return NextResponse.json(
+        {
+          emailSent: false,
+          message:
+            'Account created, but the verification email could not be sent. Configure SMTP (SMTP_HOST, SMTP_USER, SMTP_PASS) on the server, then use Resend link below with this email.',
+        },
+        { status: 201 }
       );
     }
 

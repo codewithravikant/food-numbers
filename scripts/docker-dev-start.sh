@@ -40,9 +40,17 @@ if [ ! -f node_modules/.bin/next ]; then
 fi
 
 echo "${BOLD}Running Prisma migrations...${RESET}"
-if ! npx prisma migrate deploy; then
-  echo "${BOLD}migrate deploy failed.${RESET}" >&2
-  exit 1
+export NPM_CONFIG_UPDATE_NOTIFIER=false
+if [ -x ./node_modules/.bin/prisma ]; then
+  if ! ./node_modules/.bin/prisma migrate deploy; then
+    echo "${BOLD}migrate deploy failed.${RESET}" >&2
+    exit 1
+  fi
+else
+  if ! npx prisma migrate deploy; then
+    echo "${BOLD}migrate deploy failed.${RESET}" >&2
+    exit 1
+  fi
 fi
 
 echo "${BOLD}${GREEN}Starting Next.js dev server...${RESET}"

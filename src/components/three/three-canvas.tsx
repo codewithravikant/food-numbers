@@ -31,9 +31,15 @@ export function ThreeCanvas({ children, fallback, className, camera }: ThreeCanv
       <Suspense fallback={fallback || <DefaultFallback />}>
         <Canvas
           camera={cam}
-          dpr={[1, 2]}
+          dpr={[1, 1.75]}
           gl={{ antialias: true, alpha: true }}
           style={{ background: 'transparent' }}
+          onCreated={({ gl }) => {
+            const el = gl.domElement;
+            el.addEventListener('webglcontextlost', (e) => {
+              e.preventDefault();
+            });
+          }}
         >
           {children}
         </Canvas>
