@@ -4,9 +4,19 @@ import { prisma } from '@/lib/prisma';
 import { handleApiError, ApiError } from '@/lib/api-error';
 import { generateDailyPlan } from '@/lib/ai/insight-generator';
 import { resolveInsightForDailyActionUpdate } from '@/lib/daily-plan-action-insight';
+import {
+  DEFAULT_DAILY_TOP_ACTIONS,
+  DEFAULT_HOME_INSIGHT_TEXT,
+} from '@/lib/daily-top-actions-default';
 import type { DailyAction } from '@/types/ai';
 
 const AUTO_ACTION_NOTE_PREFIX = 'top-action:';
+
+const DEFAULT_ACTION_IDS = new Set(DEFAULT_DAILY_TOP_ACTIONS.map((a) => a.id));
+
+function isDefaultDashboardActionId(id: string): boolean {
+  return DEFAULT_ACTION_IDS.has(id);
+}
 
 export async function GET() {
   try {
@@ -62,15 +72,54 @@ export async function POST(request: Request) {
       throw new ApiError(400, 'completed must be a boolean');
     }
 
-    const insight = await resolveInsightForDailyActionUpdate(session.user.id, clientPlanId);
+    let insight;
+    try {
+      insight = await resolveInsightForDailyActionUpdate(session.user.id, clientPlanId);
+    } catch (err) {
+      if (
+        err instanceof ApiError &&
+        err.status === 404 &&
+        isDefaultDashboardActionId(actionId)
+      ) {
+        insight = await prisma.aIInsight.create({
+          data: {
+            userId: session.user.id,
+            insightText: DEFAULT_HOME_INSIGHT_TEXT,
+            recommendations: JSON.parse(
+              JSON.stringify({
+                actions: DEFAULT_DAILY_TOP_ACTIONS,
+                priority: 'medium',
+              })
+            ),
+            weeklyFocus: null,
+            fallbackUsed: true,
+            promptVersion: 'default-actions-v1',
+            modelUsed: 'default_actions_v1',
+            contextHash: null,
+          },
+        });
+      } else {
+        throw err;
+      }
+    }
+
     const planId = insight.id;
 
     const recommendations = (insight.recommendations as Record<string, unknown>) || {};
-    const actions = Array.isArray(recommendations.actions) ? (recommendations.actions as DailyAction[]) : [];
-    if (!actions.length) throw new ApiError(400, 'No actions found on this plan');
+    let actions = Array.isArray(recommendations.actions) ? (recommendations.actions as DailyAction[]) : [];
 
-    const existing = actions.find((a) => a.id === actionId);
-    if (!existing) throw new ApiError(404, 'Action not found');
+    let existing = actions.find((a) => a.id === actionId);
+    if (!existing && isDefaultDashboardActionId(actionId)) {
+      actions = DEFAULT_DAILY_TOP_ACTIONS.map((a) => ({ ...a }));
+      existing = actions.find((a) => a.id === actionId);
+    }
+
+    if (!existing) {
+      throw new ApiError(404, 'Action not found');
+    }
+    if (!actions.length) {
+      throw new ApiError(400, 'No actions found on this plan');
+    }
 
     if (existing.completed && completed) {
       return NextResponse.json({ success: true, alreadyCompleted: true });
