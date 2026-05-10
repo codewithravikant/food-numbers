@@ -261,6 +261,106 @@ function smtpEnabled() {
   return Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
 }
 
+/** Command timeout for connect / EHLO / STARTTLS / AUTH / DATA (ms). */
+const SMTP_COMMAND_MS = Math.min(
+  Math.max(Number(process.env.SMTP_TIMEOUT_MS) || 25_000, 5_000),
+  120_000
+);
+
+/**
+ * Default IPv4 — avoids ENETUNREACH when DNS returns AAAA but outbound IPv6 is blocked (e.g. some Railway routes).
+ * Set SMTP_IP_FAMILY=0 or SMTP_IP_FAMILY=all for dual-stack.
+ */
+function smtpSocketFamily(): number | undefined {
+  const raw = process.env.SMTP_IP_FAMILY?.trim().toLowerCase();
+  if (raw === '0' || raw === 'all' || raw === 'dual') return undefined;
+  if (raw === '6' || raw === 'ipv6') return 6;
+  return 4;
+}
+
+function smtpEhloHostname(): string {
+  const explicit = process.env.SMTP_EHLO_HOST?.trim();
+  if (explicit) return explicit;
+  try {
+    const base = process.env.NEXT_PUBLIC_APP_URL || process.env.NEXTAUTH_URL || '';
+    const u = new URL(base);
+    if (u.hostname && !isLocalHost(u.hostname)) return u.hostname;
+  } catch {
+    // ignore
+  }
+  return 'localhost';
+}
+
+function smtpErrorCode(err: unknown): string | undefined {
+  if (!err || typeof err !== 'object') return undefined;
+  return (err as { code?: string }).code;
+}
+
+function isLikelyTransientSmtpNetworkError(err: unknown): boolean {
+  const codes = new Set<string>();
+  const add = (e: unknown) => {
+    const c = smtpErrorCode(e);
+    if (c) codes.add(c);
+  };
+  add(err);
+  if (err && typeof err === 'object' && 'errors' in err && Array.isArray((err as AggregateError).errors)) {
+    for (const e of (err as AggregateError).errors) add(e);
+  }
+  return [...codes].some((c) =>
+    ['ETIMEDOUT', 'ECONNRESET', 'ENETUNREACH', 'EHOSTUNREACH', 'ECONNREFUSED', 'ESOCKETTIMEDOUT'].includes(c)
+  );
+}
+
+type SmtpTransportMode = 'implicitTls' | 'startTls';
+
+async function sendSmtpSession(
+  to: string,
+  subject: string,
+  html: string,
+  inlineLogo: InlineLogoAttachment | undefined,
+  host: string,
+  user: string,
+  pass: string,
+  port: number,
+  mode: SmtpTransportMode
+): Promise<void> {
+  const ehlo = smtpEhloHostname();
+  const family = smtpSocketFamily();
+  const t = SMTP_COMMAND_MS;
+
+  const client = new SMTPClient({
+    host,
+    port,
+    secure: mode === 'implicitTls',
+    timeout: t,
+    ...(family !== undefined ? { family } : {}),
+  });
+
+  await client.connect({ timeout: t });
+  try {
+    await client.greet({ hostname: ehlo, timeout: t });
+    if (mode === 'startTls') {
+      await client.secure({ timeout: t });
+      await client.greet({ hostname: ehlo, timeout: t });
+    }
+    await client.authPlain({ username: user, password: pass, timeout: t });
+    await client.mail({ from: envelopeFromAddress(), timeout: t });
+    await client.rcpt({ to, timeout: t });
+    const message = buildSmtpMessage(to, subject, html, inlineLogo);
+    await client.data(message, { timeout: t });
+  } finally {
+    try {
+      await client.quit({ timeout: t });
+    } catch {
+      try {
+        await client.close({ timeout: t });
+      } catch {
+        // ignore
+      }
+    }
+  }
+}
+
 // --- Resend (disabled; SMTP only) ---
 // /** Trimmed key; empty/whitespace-only env must not count as configured. */
 // function resendApiKey(): string | undefined {
@@ -366,27 +466,42 @@ async function sendViaSmtp(
   const host = process.env.SMTP_HOST as string;
   const user = process.env.SMTP_USER as string;
   const pass = process.env.SMTP_PASS as string;
-  const port = Number(process.env.SMTP_PORT || '465');
-  const secure = port === 465;
-  const client = new SMTPClient({
-    host,
-    port,
-    secure,
-  });
+  const portRaw = process.env.SMTP_PORT?.trim();
+  const parsedPort = portRaw ? Number(portRaw) : NaN;
+  const noFallback = process.env.SMTP_NO_FALLBACK === 'true';
 
-  await client.connect();
+  const startTls = (p: number) =>
+    sendSmtpSession(to, subject, html, inlineLogo, host, user, pass, p, 'startTls');
+  const implicitTls = (p: number) =>
+    sendSmtpSession(to, subject, html, inlineLogo, host, user, pass, p, 'implicitTls');
+
+  // Port 587 / 25: submission — plain connect then STARTTLS (works when 465 is blocked, e.g. Railway → Gmail).
+  if (parsedPort === 587 || parsedPort === 25) {
+    await startTls(parsedPort);
+    return;
+  }
+
+  if (parsedPort === 465) {
+    try {
+      await implicitTls(465);
+    } catch (e) {
+      if (noFallback || !isLikelyTransientSmtpNetworkError(e)) throw e;
+      await startTls(587);
+    }
+    return;
+  }
+
+  if (portRaw && !Number.isNaN(parsedPort)) {
+    await startTls(parsedPort);
+    return;
+  }
+
+  // No SMTP_PORT: try 587 first (PaaS-friendly), then implicit TLS on 465.
   try {
-    await client.greet({ hostname: 'localhost' });
-    await client.authPlain({ username: user, password: pass });
-    // SMTP envelope sender must be a plain email address (no display name).
-    await client.mail({ from: envelopeFromAddress() });
-    await client.rcpt({ to });
-
-    const message = buildSmtpMessage(to, subject, html, inlineLogo);
-
-    await client.data(message);
-  } finally {
-    await client.quit();
+    await startTls(587);
+  } catch (e) {
+    if (noFallback || !isLikelyTransientSmtpNetworkError(e)) throw e;
+    await implicitTls(465);
   }
 }
 
