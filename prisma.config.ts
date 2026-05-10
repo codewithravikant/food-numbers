@@ -9,14 +9,20 @@ config({ path: resolve(process.cwd(), ".env.local"), override: true });
 
 function getDatabaseUrl(): string {
   const url = process.env.DATABASE_URL?.trim();
-  if (!url) {
-    throw new Error(
-      "DATABASE_URL is not set. Copy .env.example to .env and set DATABASE_URL. " +
-        "For Postgres exposed by Docker Compose on this repo, the host port is 5433 " +
-        '(e.g. postgresql://fitnexus_user:YOUR_PASSWORD@localhost:5433/fitnexus_db — match POSTGRES_* in .env).'
-    );
+  if (url) return url;
+
+  // `prisma generate` loads this config but does not open a DB connection; allow CI / postinstall
+  // without a real URL. Migrations and other commands still require DATABASE_URL in .env.
+  const isGenerateOnly = process.argv.some((arg) => arg === "generate");
+  if (isGenerateOnly) {
+    return "postgresql://dummy:dummy@localhost:5432/dummy";
   }
-  return url;
+
+  throw new Error(
+    "DATABASE_URL is not set. Copy .env.example to .env and set DATABASE_URL. " +
+      "For Postgres exposed by Docker Compose on this repo, the host port is 5433 " +
+      '(e.g. postgresql://fitnexus_user:YOUR_PASSWORD@localhost:5433/fitnexus_db — match POSTGRES_* in .env).'
+  );
 }
 
 export default defineConfig({

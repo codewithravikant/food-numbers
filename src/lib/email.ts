@@ -1,4 +1,5 @@
-import { Resend } from 'resend';
+// SMTP-only: Resend disabled — restore when using Resend again.
+// import { Resend } from 'resend';
 import { SMTPClient } from 'smtp-client';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -248,7 +249,7 @@ function envelopeFromAddress() {
   return (
     extractEmailAddress(process.env.EMAIL_FROM) ||
     extractEmailAddress(process.env.SMTP_USER) ||
-    'onboarding@resend.dev'
+    'noreply@localhost'
   );
 }
 
@@ -260,44 +261,45 @@ function smtpEnabled() {
   return Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
 }
 
-/** Trimmed key; empty/whitespace-only env must not count as configured. */
-function resendApiKey(): string | undefined {
-  const v = process.env.RESEND_API_KEY?.trim();
-  return v || undefined;
-}
-
-function hasResendConfigured(): boolean {
-  return Boolean(resendApiKey());
-}
-
-async function sendViaResend(
-  to: string,
-  subject: string,
-  html: string,
-  inlineLogo?: InlineLogoAttachment
-) {
-  const key = resendApiKey();
-  if (!key) {
-    throw new Error('RESEND_API_KEY is missing or whitespace-only');
-  }
-  const resend = new Resend(key);
-  await resend.emails.send({
-    from: fromAddress(),
-    to,
-    subject,
-    html,
-    attachments: inlineLogo
-      ? [
-          {
-            filename: inlineLogo.filename,
-            content: inlineLogo.contentBase64,
-            contentType: inlineLogo.contentType,
-            contentId: inlineLogo.contentId,
-          },
-        ]
-      : undefined,
-  });
-}
+// --- Resend (disabled; SMTP only) ---
+// /** Trimmed key; empty/whitespace-only env must not count as configured. */
+// function resendApiKey(): string | undefined {
+//   const v = process.env.RESEND_API_KEY?.trim();
+//   return v || undefined;
+// }
+//
+// function hasResendConfigured(): boolean {
+//   return Boolean(resendApiKey());
+// }
+//
+// async function sendViaResend(
+//   to: string,
+//   subject: string,
+//   html: string,
+//   inlineLogo?: InlineLogoAttachment
+// ) {
+//   const key = resendApiKey();
+//   if (!key) {
+//     throw new Error('RESEND_API_KEY is missing or whitespace-only');
+//   }
+//   const resend = new Resend(key);
+//   await resend.emails.send({
+//     from: fromAddress(),
+//     to,
+//     subject,
+//     html,
+//     attachments: inlineLogo
+//       ? [
+//           {
+//             filename: inlineLogo.filename,
+//             content: inlineLogo.contentBase64,
+//             contentType: inlineLogo.contentType,
+//             contentId: inlineLogo.contentId,
+//           },
+//         ]
+//       : undefined,
+//   });
+// }
 
 function chunkBase64(base64: string): string {
   return base64.match(/.{1,76}/g)?.join('\r\n') || base64;
@@ -358,7 +360,7 @@ async function sendViaSmtp(
   inlineLogo?: InlineLogoAttachment
 ) {
   if (!smtpEnabled()) {
-    return;
+    throw new Error('SMTP is not configured (set SMTP_HOST, SMTP_USER, SMTP_PASS)');
   }
 
   const host = process.env.SMTP_HOST as string;
@@ -399,28 +401,11 @@ async function sendEmailWithTemplate(
     logoSrc: branding.logoSrc,
   });
 
-  const hasSmtp = smtpEnabled();
-  const hasResend = hasResendConfigured();
-
-  if (hasSmtp) {
-    try {
-      await sendViaSmtp(to, subject, html, branding.inlineLogo);
-      return;
-    } catch (error) {
-      if (!hasResend) {
-        throw error;
-      }
-    }
+  if (!smtpEnabled()) {
+    throw new Error('No email provider configured: set SMTP_HOST, SMTP_USER, and SMTP_PASS');
   }
 
-  if (hasResend) {
-    await sendViaResend(to, subject, html, branding.inlineLogo);
-    return;
-  }
-
-  if (!hasSmtp && !hasResend) {
-    throw new Error('No email provider configured');
-  }
+  await sendViaSmtp(to, subject, html, branding.inlineLogo);
 }
 
 export async function sendVerificationEmail(email: string, token: string) {
@@ -451,5 +436,4 @@ export async function sendPasswordResetEmail(email: string, token: string) {
 
 export const __emailInternals = {
   smtpEnabled,
-  hasResendConfigured,
 };
