@@ -28,12 +28,12 @@ export async function POST(request: Request) {
       await sendVerificationEmail(email, token);
     } catch (emailError) {
       console.error('Failed to send verification email:', emailError);
-      // Keep the user and token so they can use "Resend verification" once SMTP is fixed.
+      // Keep the user and token so they can use "Resend verification" once mail works.
       return NextResponse.json(
         {
           emailSent: false,
           message:
-            'Account created, but the verification email could not be sent. Configure SMTP (SMTP_HOST, SMTP_USER, SMTP_PASS) on the server, then use Resend link below with this email.',
+            'Account created, but the verification email could not be sent. Use Google SMTP (SMTP_USER, SMTP_PASS App Password, SMTP_PORT=587) on the server, then use Resend link below.',
         },
         { status: 201 }
       );

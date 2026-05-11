@@ -1,5 +1,3 @@
-// SMTP-only: Resend disabled — restore when using Resend again.
-// import { Resend } from 'resend';
 import { SMTPClient } from 'smtp-client';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -257,8 +255,13 @@ function fromAddress() {
   return process.env.EMAIL_FROM || envelopeFromAddress();
 }
 
+/** Google SMTP only: credentials required; host defaults to smtp.gmail.com (port 587 + STARTTLS). */
 function smtpEnabled() {
-  return Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
+  return Boolean(process.env.SMTP_USER?.trim() && process.env.SMTP_PASS?.trim());
+}
+
+function smtpHost(): string {
+  return (process.env.SMTP_HOST?.trim() || 'smtp.gmail.com');
 }
 
 /** Command timeout for connect / EHLO / STARTTLS / AUTH / DATA (ms). */
@@ -341,46 +344,6 @@ async function sendSmtpSession(
   }
 }
 
-// --- Resend (disabled; SMTP only) ---
-// /** Trimmed key; empty/whitespace-only env must not count as configured. */
-// function resendApiKey(): string | undefined {
-//   const v = process.env.RESEND_API_KEY?.trim();
-//   return v || undefined;
-// }
-//
-// function hasResendConfigured(): boolean {
-//   return Boolean(resendApiKey());
-// }
-//
-// async function sendViaResend(
-//   to: string,
-//   subject: string,
-//   html: string,
-//   inlineLogo?: InlineLogoAttachment
-// ) {
-//   const key = resendApiKey();
-//   if (!key) {
-//     throw new Error('RESEND_API_KEY is missing or whitespace-only');
-//   }
-//   const resend = new Resend(key);
-//   await resend.emails.send({
-//     from: fromAddress(),
-//     to,
-//     subject,
-//     html,
-//     attachments: inlineLogo
-//       ? [
-//           {
-//             filename: inlineLogo.filename,
-//             content: inlineLogo.contentBase64,
-//             contentType: inlineLogo.contentType,
-//             contentId: inlineLogo.contentId,
-//           },
-//         ]
-//       : undefined,
-//   });
-// }
-
 function chunkBase64(base64: string): string {
   return base64.match(/.{1,76}/g)?.join('\r\n') || base64;
 }
@@ -440,10 +403,10 @@ async function sendViaSmtp(
   inlineLogo?: InlineLogoAttachment
 ) {
   if (!smtpEnabled()) {
-    throw new Error('SMTP is not configured (set SMTP_HOST, SMTP_USER, SMTP_PASS)');
+    throw new Error('SMTP is not configured (set SMTP_USER, SMTP_PASS — Google App Password)');
   }
 
-  const host = process.env.SMTP_HOST as string;
+  const host = smtpHost();
   const user = process.env.SMTP_USER as string;
   const pass = process.env.SMTP_PASS as string;
   const portRaw = process.env.SMTP_PORT?.trim();
@@ -500,7 +463,9 @@ async function sendEmailWithTemplate(
   });
 
   if (!smtpEnabled()) {
-    throw new Error('No email provider configured: set SMTP_HOST, SMTP_USER, and SMTP_PASS');
+    throw new Error(
+      'No email configured: set SMTP_USER (full Gmail address), SMTP_PASS (Google App Password), optional SMTP_HOST (default smtp.gmail.com), SMTP_PORT=587'
+    );
   }
 
   await sendViaSmtp(to, subject, html, branding.inlineLogo);
@@ -534,4 +499,5 @@ export async function sendPasswordResetEmail(email: string, token: string) {
 
 export const __emailInternals = {
   smtpEnabled,
+  smtpHost,
 };

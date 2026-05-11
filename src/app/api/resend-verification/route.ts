@@ -72,7 +72,7 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           error:
-            'Email could not be sent. Check SMTP_HOST, SMTP_PORT (587 recommended), SMTP_USER, SMTP_PASS, and EMAIL_FROM on the server.',
+            'Email could not be sent via Google SMTP (check SMTP_USER, App Password, port 587, IPv4). Unverified accounts cannot sign in until the link is delivered.',
         },
         { status: 503 }
       );
