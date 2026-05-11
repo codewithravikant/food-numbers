@@ -60,11 +60,12 @@ const providers = [
       const ok = await verifyPassword(password, user.password);
       if (!ok) return null;
 
-      if (!user.emailVerified) {
-        const err = new CredentialsSignin();
-        err.code = 'email_not_verified';
-        throw err;
-      }
+      // Email verification disabled for now.
+      // if (!user.emailVerified) {
+      //   const err = new CredentialsSignin();
+      //   err.code = 'email_not_verified';
+      //   throw err;
+      // }
 
       if (user.twoFactorEnabled) {
         if (!twoFactorCode || twoFactorCode.length !== 6) {

@@ -2,8 +2,8 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { hashPassword } from '@/lib/auth-helpers';
 import { signupSchema } from '@/lib/validations/auth';
-import { generateVerificationToken } from '@/lib/tokens';
-import { sendVerificationEmail } from '@/lib/email';
+// import { generateVerificationToken } from '@/lib/tokens';
+// import { sendVerificationEmail } from '@/lib/email';
 import { handleApiError, ApiError } from '@/lib/api-error';
 
 export async function POST(request: Request) {
@@ -19,30 +19,34 @@ export async function POST(request: Request) {
     }
 
     const hashedPassword = await hashPassword(password);
-    const user = await prisma.user.create({
-      data: { email, password: hashedPassword },
+    await prisma.user.create({
+      data: {
+        email,
+        password: hashedPassword,
+        emailVerified: new Date(),
+      },
     });
 
-    const token = await generateVerificationToken(user.id);
-    try {
-      await sendVerificationEmail(email, token);
-    } catch (emailError) {
-      console.error('Failed to send verification email:', emailError);
-      // Keep the user and token so they can use "Resend verification" once mail works.
-      return NextResponse.json(
-        {
-          emailSent: false,
-          message:
-            'Account created, but the verification email could not be sent. Use Google SMTP (SMTP_USER, SMTP_PASS App Password, SMTP_PORT=587) on the server, then use Resend link below.',
-        },
-        { status: 201 }
-      );
-    }
+    // Email verification disabled for now — users can sign in immediately.
+    // const token = await generateVerificationToken(user.id);
+    // try {
+    //   await sendVerificationEmail(email, token);
+    // } catch (emailError) {
+    //   console.error('Failed to send verification email:', emailError);
+    //   return NextResponse.json(
+    //     {
+    //       emailSent: false,
+    //       message:
+    //         'Account created, but the verification email could not be sent. Use Google SMTP (SMTP_USER, SMTP_PASS App Password, SMTP_PORT=587) on the server, then use Resend link below.',
+    //     },
+    //     { status: 201 }
+    //   );
+    // }
 
     return NextResponse.json(
       {
         emailSent: true,
-        message: 'Account created. Please check your email to verify your account.',
+        message: 'Account created. You can sign in now.',
       },
       { status: 201 }
     );
