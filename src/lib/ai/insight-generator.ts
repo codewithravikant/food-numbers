@@ -17,6 +17,19 @@ import {
 } from '@/lib/ai/response-cache';
 import type { DailyAction, DailyPlan, SmartMeal } from '@/types/ai';
 
+/** Stored on recommendations JSON when daily plan used a rule-based fallback. */
+export type DailyPlanFallbackReason =
+  | 'no_api_key'
+  | 'no_model'
+  | 'auth_error'
+  | 'rate_limit'
+  | 'network'
+  | 'parse_error'
+  | 'guardrail'
+  | 'invalid_model'
+  | 'truncated'
+  | 'privacy';
+
 const FALLBACK_MODEL = 'fallback_rules_v1';
 
 function normalizeActions(raw: unknown): DailyAction[] {
@@ -101,6 +114,40 @@ function parseJsonObjectFromContent(content: string): Record<string, unknown> {
   throw new Error('Invalid JSON response from AI provider');
 }
 
+function fallbackReasonTag(
+  reason:
+    | 'no_key'
+    | 'privacy'
+    | 'error'
+    | 'invalid_model'
+    | 'truncated'
+    | 'model_missing'
+    | 'auth'
+    | 'rate_limited'
+    | 'network'
+    | 'parse_error'
+    | 'guardrail'
+): { fallbackReason: DailyPlanFallbackReason } | Record<string, never> {
+  const map: Record<
+    typeof reason,
+    DailyPlanFallbackReason | undefined
+  > = {
+    privacy: 'privacy',
+    no_key: 'no_api_key',
+    model_missing: 'no_model',
+    invalid_model: 'invalid_model',
+    auth: 'auth_error',
+    rate_limited: 'rate_limit',
+    network: 'network',
+    truncated: 'truncated',
+    parse_error: 'parse_error',
+    guardrail: 'guardrail',
+    error: undefined,
+  };
+  const fallbackReason = map[reason];
+  return fallbackReason ? { fallbackReason } : {};
+}
+
 function buildFallbackPlan(
   context: Awaited<ReturnType<typeof buildAIContext>>,
   preserveMode: boolean,
@@ -114,6 +161,8 @@ function buildFallbackPlan(
     | 'auth'
     | 'rate_limited'
     | 'network'
+    | 'parse_error'
+    | 'guardrail'
 ): {
   insightText: string;
   recommendations: Record<string, unknown>;
@@ -174,6 +223,12 @@ function buildFallbackPlan(
   } else if (reason === 'truncated') {
     insightText =
       'AI provider response was truncated before a valid plan was produced. Retrying with another compatible model is recommended.';
+  } else if (reason === 'guardrail') {
+    insightText =
+      'AI output did not pass safety validation for your context. Using a conservative offline plan — try regenerating after updating your profile or model.';
+  } else if (reason === 'parse_error') {
+    insightText =
+      'Could not parse the AI response as structured JSON. Using offline plan — try another chat model or regenerate.';
   } else {
     insightText =
       'We could not reach the AI service (network or provider issue). Using a reliable offline plan until the next successful sync.';
@@ -187,6 +242,7 @@ function buildFallbackPlan(
       preserveMode: pm,
       insightExpanded: '',
       priority: 'medium',
+      ...fallbackReasonTag(reason),
     },
     modelUsed: FALLBACK_MODEL,
   };
@@ -266,10 +322,20 @@ function classifyPlanError(error: unknown):
   | 'model_missing'
   | 'auth'
   | 'rate_limited'
-  | 'network' {
+  | 'network'
+  | 'parse_error'
+  | 'guardrail' {
   const message = error instanceof Error ? error.message : String(error ?? '');
   const lower = message.toLowerCase();
 
+  if (lower.includes('hallucination_guard_failed')) return 'guardrail';
+  if (
+    lower.includes('invalid json response')
+    || lower.includes('invalid ai actions')
+    || lower.includes('could not parse')
+  ) {
+    return 'parse_error';
+  }
   if (lower.startsWith('unsupported_model:')) return 'invalid_model';
   if (message === 'provider_truncated_response') return 'truncated';
   if (lower.includes('openrouter_model or openai_model is not configured')) return 'model_missing';

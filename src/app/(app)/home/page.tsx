@@ -110,6 +110,9 @@ export default async function HomePage() {
     }
 
     const fb = recs?.fallbackReason as DailyPlanFallbackReason | undefined;
+    if (fb === 'no_api_key') {
+      return { label: 'API key missing', tone: 'offline' as const };
+    }
     if (fb === 'no_model') {
       return { label: 'Model missing', tone: 'warning' as const };
     }
