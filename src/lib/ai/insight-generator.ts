@@ -19,84 +19,6 @@ import type { DailyAction, DailyPlan, SmartMeal } from '@/types/ai';
 
 const FALLBACK_MODEL = 'fallback_rules_v1';
 
-export type DailyPlanFallbackReason =
-  | 'no_key'
-  | 'no_model'
-  | 'privacy'
-  | 'invalid_model'
-  | 'truncated'
-  | 'auth_error'
-  | 'rate_limit'
-  | 'network'
-  | 'parse_error'
-  | 'guardrail'
-  | 'error';
-
-/** Extract a JSON object from model text (bare JSON, ```json fences, or leading/trailing prose). */
-export function parseJsonObjectFromContent(content: string): Record<string, unknown> {
-  const tryParse = (raw: string): Record<string, unknown> | null => {
-    try {
-      const parsed = JSON.parse(raw) as unknown;
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        return parsed as Record<string, unknown>;
-      }
-    } catch {
-      /* ignore */
-    }
-    return null;
-  };
-
-  const trimmed = content.trim();
-  const direct = tryParse(trimmed);
-  if (direct) return direct;
-
-  const fence = /```(?:json)?\s*([\s\S]*?)```/i.exec(trimmed);
-  if (fence?.[1]) {
-    const fromFence = tryParse(fence[1].trim());
-    if (fromFence) return fromFence;
-  }
-
-  const firstBrace = trimmed.indexOf('{');
-  const lastBrace = trimmed.lastIndexOf('}');
-  if (firstBrace >= 0 && lastBrace > firstBrace) {
-    const extracted = tryParse(trimmed.slice(firstBrace, lastBrace + 1));
-    if (extracted) return extracted;
-  }
-
-  throw new Error('ai_response_not_json');
-}
-
-function classifyProviderFailure(e: unknown): DailyPlanFallbackReason {
-  const msg = e instanceof Error ? e.message : String(e);
-
-  if (msg === 'OPENROUTER_MODEL or OPENAI_MODEL is not configured' || /OPENROUTER_MODEL|OPENAI_MODEL.*not configured/i.test(msg)) {
-    return 'no_model';
-  }
-  if (msg.startsWith('unsupported_model:')) return 'invalid_model';
-  if (msg === 'provider_truncated_response') return 'truncated';
-  if (msg === 'ai_response_not_json') return 'parse_error';
-  if (msg.startsWith('hallucination_guard_failed:')) return 'guardrail';
-
-  if (typeof e === 'object' && e !== null && 'status' in e) {
-    const status = (e as { status?: number }).status;
-    if (status === 401 || status === 403) return 'auth_error';
-    if (status === 429) return 'rate_limit';
-    if (typeof status === 'number' && status >= 500) return 'network';
-  }
-
-  if (/ECONNREFUSED|ENOTFOUND|ETIMEDOUT|ECONNRESET|fetch failed|socket|network/i.test(msg)) {
-    return 'network';
-  }
-  if (/401|403|unauthorized|invalid api key|incorrect api key|authentication/i.test(msg)) {
-    return 'auth_error';
-  }
-  if (/429|rate limit|quota|too many requests/i.test(msg)) {
-    return 'rate_limit';
-  }
-
-  return 'error';
-}
-
 function normalizeActions(raw: unknown): DailyAction[] {
   if (!Array.isArray(raw)) return [];
   const out: DailyAction[] = [];
@@ -143,10 +65,55 @@ function normalizePriority(raw: unknown): 'high' | 'medium' | 'low' {
   return 'medium';
 }
 
+function parseJsonObjectFromContent(content: string): Record<string, unknown> {
+  const tryParse = (raw: string): Record<string, unknown> | null => {
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  };
+
+  const direct = tryParse(content);
+  if (direct) return direct;
+
+  const withoutFence = content
+    .trim()
+    .replace(/^```json\s*/i, '')
+    .replace(/^```\s*/i, '')
+    .replace(/\s*```$/, '')
+    .trim();
+  const fenced = tryParse(withoutFence);
+  if (fenced) return fenced;
+
+  const firstBrace = withoutFence.indexOf('{');
+  const lastBrace = withoutFence.lastIndexOf('}');
+  if (firstBrace >= 0 && lastBrace > firstBrace) {
+    const sliced = withoutFence.slice(firstBrace, lastBrace + 1);
+    const slicedParsed = tryParse(sliced);
+    if (slicedParsed) return slicedParsed;
+  }
+
+  throw new Error('Invalid JSON response from AI provider');
+}
+
 function buildFallbackPlan(
   context: Awaited<ReturnType<typeof buildAIContext>>,
   preserveMode: boolean,
-  reason: DailyPlanFallbackReason
+  reason:
+    | 'no_key'
+    | 'privacy'
+    | 'error'
+    | 'invalid_model'
+    | 'truncated'
+    | 'model_missing'
+    | 'auth'
+    | 'rate_limited'
+    | 'network'
 ): {
   insightText: string;
   recommendations: Record<string, unknown>;
@@ -188,34 +155,28 @@ function buildFallbackPlan(
       'AI personalization is turned off in your privacy settings. Here is a safe, general plan for today.';
   } else if (reason === 'no_key') {
     insightText =
-      'Add OPENROUTER_API_KEY (optional: OPENROUTER_MODEL). You can also use OPENAI_API_KEY as a fallback provider. Restart the server after changing .env. Showing an offline-safe plan for now.';
-  } else if (reason === 'no_model') {
+      'Add OPENROUTER_API_KEY (optional: OPENROUTER_MODEL). You can also use OPENAI_API_KEY as a fallback provider. If you just updated .env, restart the dev server, then regenerate the plan.';
+  } else if (reason === 'model_missing') {
     insightText =
-      'Set OPENROUTER_MODEL or OPENAI_MODEL for your provider. Restart the app after updating environment variables.';
+      'API key exists but model is not configured. Set OPENROUTER_MODEL or OPENAI_MODEL, restart the server, then regenerate.';
   } else if (reason === 'invalid_model') {
     insightText =
       'Your configured AI model is not compatible with daily plan generation (OCR/vision model). Switch OPENROUTER_MODEL to a chat/instruction model and try again.';
+  } else if (reason === 'auth') {
+    insightText =
+      'AI provider rejected credentials (invalid/expired key). Update API key and regenerate.';
+  } else if (reason === 'rate_limited') {
+    insightText =
+      'AI provider rate-limited or quota-limited this request. Retry shortly or check provider quota.';
+  } else if (reason === 'network') {
+    insightText =
+      'Could not reach the AI provider (network/DNS/timeout). Using offline plan until connectivity recovers.';
   } else if (reason === 'truncated') {
     insightText =
       'AI provider response was truncated before a valid plan was produced. Retrying with another compatible model is recommended.';
-  } else if (reason === 'auth_error') {
-    insightText =
-      'The AI provider rejected the API key (unauthorized). Verify OPENROUTER_API_KEY or OPENAI_API_KEY, redeploy or restart after .env changes.';
-  } else if (reason === 'rate_limit') {
-    insightText =
-      'The AI provider rate-limited or exceeded quota for this request. Wait a few minutes or check your provider plan limits.';
-  } else if (reason === 'network') {
-    insightText =
-      'Could not reach the AI provider (network or server error). Check connectivity and provider status; using an offline plan for now.';
-  } else if (reason === 'parse_error') {
-    insightText =
-      'The model returned text we could not parse as JSON. Try another chat model or generate again.';
-  } else if (reason === 'guardrail') {
-    insightText =
-      'The model output did not pass safety validation. Regenerate or try a different model.';
   } else {
     insightText =
-      'We could not produce a live AI plan (unexpected error). Using a reliable offline plan until the next successful sync.';
+      'We could not reach the AI service (network or provider issue). Using a reliable offline plan until the next successful sync.';
   }
 
   return {
@@ -226,7 +187,6 @@ function buildFallbackPlan(
       preserveMode: pm,
       insightExpanded: '',
       priority: 'medium',
-      fallbackReason: reason,
     },
     modelUsed: FALLBACK_MODEL,
   };
@@ -297,6 +257,51 @@ async function callLlmForPlan(prompt: string): Promise<Record<string, unknown>> 
 function isUnsupportedDailyPlanModel(model: string): boolean {
   const m = model.toLowerCase();
   return m.includes('ocr') || m.includes('vision');
+}
+
+function classifyPlanError(error: unknown):
+  | 'error'
+  | 'invalid_model'
+  | 'truncated'
+  | 'model_missing'
+  | 'auth'
+  | 'rate_limited'
+  | 'network' {
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  const lower = message.toLowerCase();
+
+  if (lower.startsWith('unsupported_model:')) return 'invalid_model';
+  if (message === 'provider_truncated_response') return 'truncated';
+  if (lower.includes('openrouter_model or openai_model is not configured')) return 'model_missing';
+  if (
+    lower.includes('unauthorized')
+    || lower.includes('invalid api key')
+    || lower.includes('incorrect api key')
+    || lower.includes('authentication')
+    || lower.includes('status code 401')
+  ) {
+    return 'auth';
+  }
+  if (
+    lower.includes('rate limit')
+    || lower.includes('too many requests')
+    || lower.includes('quota')
+    || lower.includes('credits')
+    || lower.includes('status code 429')
+  ) {
+    return 'rate_limited';
+  }
+  if (
+    lower.includes('fetch failed')
+    || lower.includes('network')
+    || lower.includes('timeout')
+    || lower.includes('econnreset')
+    || lower.includes('enotfound')
+    || lower.includes('socket hang up')
+  ) {
+    return 'network';
+  }
+  return 'error';
 }
 
 const DEFAULT_ACTIONS: DailyAction[] = [
@@ -443,7 +448,7 @@ export async function generateDailyPlan(
     console.error('[ai] daily plan generation failed', e);
     const cached = await getCachedDailyPlan(cacheKey);
     if (cached) return await persistCachedPlan(userId, cached, preserveMode);
-    const reason = classifyProviderFailure(e);
+    const reason = classifyPlanError(e);
     const fb = buildFallbackPlan(context, preserveMode, reason);
     const row = await prisma.aIInsight.create({
       data: {

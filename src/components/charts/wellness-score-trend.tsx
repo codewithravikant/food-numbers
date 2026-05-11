@@ -16,8 +16,36 @@ export function WellnessScoreTrend({ data }: WellnessScoreTrendProps) {
 
   const days = range === '7d' ? 7 : range === '30d' ? 30 : 90;
   const filtered = data.slice(0, days).reverse();
+  const hasLowHistory = filtered.length <= 1;
 
-  const formatted = filtered.map((d) => ({
+  const start = new Date();
+  start.setDate(start.getDate() - (days - 1));
+  const daySeries = Array.from({ length: days }, (_, idx) => {
+    const date = new Date(start);
+    date.setDate(start.getDate() + idx);
+    return date;
+  });
+  const byIso = new Map(filtered.map((d) => [new Date(d.date).toISOString().slice(0, 10), d.score]));
+  const fallbackScore = filtered[filtered.length - 1]?.score ?? 50;
+
+  const chartData = hasLowHistory
+    ? daySeries.map((date, idx) => {
+        const iso = date.toISOString().slice(0, 10);
+        const actual = byIso.get(iso);
+        const isFirstPlotted = idx === daySeries.length - 1;
+        return {
+          date: iso,
+          score: typeof actual === 'number' ? actual : (isFirstPlotted ? fallbackScore : null),
+          projectedScore: fallbackScore,
+        };
+      })
+    : filtered.map((d) => ({
+        date: d.date,
+        score: d.score,
+        projectedScore: null as number | null,
+      }));
+
+  const formatted = chartData.map((d) => ({
     ...d,
     label: new Date(d.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
   }));
@@ -57,11 +85,22 @@ export function WellnessScoreTrend({ data }: WellnessScoreTrendProps) {
               <XAxis dataKey="label" tick={{ fontSize: 10 }} stroke="var(--muted-foreground)" />
               <YAxis domain={[0, 100]} tick={{ fontSize: 10 }} stroke="var(--muted-foreground)" />
               <Tooltip contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: '8px', fontSize: '12px' }} />
-              <Area type="monotone" dataKey="score" stroke="var(--primary)" fill="url(#scoreGradient)" strokeWidth={2} />
+                {hasLowHistory ? (
+                  <Area
+                    type="monotone"
+                    dataKey="projectedScore"
+                    stroke="var(--muted-foreground)"
+                    fill="url(#scoreGradient)"
+                    strokeDasharray="4 4"
+                    strokeWidth={1.5}
+                    fillOpacity={0.15}
+                  />
+                ) : null}
+                <Area type="monotone" dataKey="score" stroke="var(--primary)" fill="url(#scoreGradient)" strokeWidth={2} />
             </AreaChart>
           </ResponsiveContainer>
         ) : (
-          <p className="py-8 text-center text-sm text-muted-foreground">Not enough data yet</p>
+          <p className="py-8 text-center text-sm text-muted-foreground">Day one ready. Trend will fill as you log more days.</p>
         )}
       </CardContent>
     </Card>
