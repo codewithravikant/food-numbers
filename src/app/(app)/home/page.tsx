@@ -19,6 +19,9 @@ import {
   DEFAULT_DAILY_TOP_ACTIONS,
   DEFAULT_HOME_INSIGHT_TEXT,
 } from '@/lib/daily-top-actions-default';
+import { hasOpenAIKey } from '@/lib/ai/openai-client';
+
+const STALE_NO_KEY_INSIGHT_HINT = 'add openrouter_api_key';
 
 export const dynamic = 'force-dynamic';
 export const metadata = { title: 'Wellness Dashboard - FitNexus' };
@@ -81,7 +84,14 @@ export default async function HomePage() {
     ? (recs.actions as typeof DEFAULT_DAILY_TOP_ACTIONS)
     : DEFAULT_DAILY_TOP_ACTIONS;
 
-  const insightText = activeInsight?.insightText || DEFAULT_HOME_INSIGHT_TEXT;
+  const isStaleNoKeyInsight =
+    !!activeInsight?.fallbackUsed &&
+    activeInsight.insightText.toLowerCase().includes(STALE_NO_KEY_INSIGHT_HINT) &&
+    hasOpenAIKey();
+
+  const insightText = isStaleNoKeyInsight
+    ? "Your API key is configured. Regenerate today's plan for a live AI insight."
+    : activeInsight?.insightText || DEFAULT_HOME_INSIGHT_TEXT;
   const insightExpanded = typeof recs?.insightExpanded === 'string' ? recs.insightExpanded : undefined;
   const insightPriority =
     recs?.priority === 'high' || recs?.priority === 'medium' || recs?.priority === 'low'
@@ -107,7 +117,10 @@ export default async function HomePage() {
     if (lowerText.includes('privacy settings')) {
       return { label: 'AI off (privacy)', tone: 'offline' as const };
     }
-    if (lowerText.includes('add openrouter_api_key')) {
+    if (lowerText.includes(STALE_NO_KEY_INSIGHT_HINT)) {
+      if (hasOpenAIKey()) {
+        return { label: 'Stale plan — regenerate', tone: 'warning' as const };
+      }
       return { label: 'API key missing', tone: 'offline' as const };
     }
     return { label: 'Offline fallback', tone: 'offline' as const };
