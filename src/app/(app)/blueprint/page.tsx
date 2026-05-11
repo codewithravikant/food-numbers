@@ -88,32 +88,46 @@ export default async function BlueprintPage() {
   const twoMonthsAgo = new Date(now);
   twoMonthsAgo.setDate(twoMonthsAgo.getDate() - 60);
 
-  const activityCurrentWeek = activityLogs
-    .filter((row) => row.loggedAt >= oneWeekAgo)
-    .reduce((sum, row) => sum + row.durationMin, 0);
-  const activityPreviousWeek = activityLogs
-    .filter((row) => row.loggedAt < oneWeekAgo && row.loggedAt >= twoWeeksAgo)
-    .reduce((sum, row) => sum + row.durationMin, 0);
-  const activityCurrentMonth = activityLogs
-    .filter((row) => row.loggedAt >= oneMonthAgo)
-    .reduce((sum, row) => sum + row.durationMin, 0);
-  const activityPreviousMonth = activityLogs
-    .filter((row) => row.loggedAt < oneMonthAgo && row.loggedAt >= twoMonthsAgo)
-    .reduce((sum, row) => sum + row.durationMin, 0);
+  const logsCurrentWeek = activityLogs.filter((row) => row.loggedAt >= oneWeekAgo);
+  const logsPrevWeek = activityLogs.filter((row) => row.loggedAt < oneWeekAgo && row.loggedAt >= twoWeeksAgo);
+  const logsCurrentMonth = activityLogs.filter((row) => row.loggedAt >= oneMonthAgo);
+  const logsPrevMonth = activityLogs.filter((row) => row.loggedAt < oneMonthAgo && row.loggedAt >= twoMonthsAgo);
+
+  const activityCurrentWeek = logsCurrentWeek.reduce((sum, row) => sum + row.durationMin, 0);
+  const activityPreviousWeek = logsPrevWeek.reduce((sum, row) => sum + row.durationMin, 0);
+  const activityCurrentMonth = logsCurrentMonth.reduce((sum, row) => sum + row.durationMin, 0);
+  const activityPreviousMonth = logsPrevMonth.reduce((sum, row) => sum + row.durationMin, 0);
+
+  const scoresCurrentWeekRows = scores.filter((row) => row.date >= oneWeekAgo);
+  const scoresPrevWeekRows = scores.filter((row) => row.date < oneWeekAgo && row.date >= twoWeeksAgo);
+  const scoresCurrentMonthRows = scores.filter((row) => row.date >= oneMonthAgo);
+  const scoresPrevMonthRows = scores.filter((row) => row.date < oneMonthAgo && row.date >= twoMonthsAgo);
 
   const avgScore = (rows: typeof scores) =>
     rows.length ? rows.reduce((sum, row) => sum + row.score, 0) / rows.length : 0;
-  const scoreCurrentWeek = avgScore(scores.filter((row) => row.date >= oneWeekAgo));
-  const scorePreviousWeek = avgScore(scores.filter((row) => row.date < oneWeekAgo && row.date >= twoWeeksAgo));
-  const scoreCurrentMonth = avgScore(scores.filter((row) => row.date >= oneMonthAgo));
-  const scorePreviousMonth = avgScore(scores.filter((row) => row.date < oneMonthAgo && row.date >= twoMonthsAgo));
+  const scoreCurrentWeek = avgScore(scoresCurrentWeekRows);
+  const scorePreviousWeek = avgScore(scoresPrevWeekRows);
+  const scoreCurrentMonth = avgScore(scoresCurrentMonthRows);
+  const scorePreviousMonth = avgScore(scoresPrevMonthRows);
 
-  const comparisonData = [
-    { label: 'Activity 7d', current: activityCurrentWeek, previous: activityPreviousWeek },
-    { label: 'Activity 30d', current: activityCurrentMonth, previous: activityPreviousMonth },
-    { label: 'Score 7d', current: Math.round(scoreCurrentWeek), previous: Math.round(scorePreviousWeek) },
-    { label: 'Score 30d', current: Math.round(scoreCurrentMonth), previous: Math.round(scorePreviousMonth) },
-  ];
+  const hasActivity7dCompare = logsCurrentWeek.length > 0 && logsPrevWeek.length > 0;
+  const hasActivity30dCompare = logsCurrentMonth.length > 0 && logsPrevMonth.length > 0;
+  const hasScore7dCompare = scoresCurrentWeekRows.length > 0 && scoresPrevWeekRows.length > 0;
+  const hasScore30dCompare = scoresCurrentMonthRows.length > 0 && scoresPrevMonthRows.length > 0;
+
+  const comparisonData: Array<{ label: string; current: number; previous: number }> = [];
+  if (hasActivity7dCompare) {
+    comparisonData.push({ label: 'Activity 7d', current: activityCurrentWeek, previous: activityPreviousWeek });
+  }
+  if (hasActivity30dCompare) {
+    comparisonData.push({ label: 'Activity 30d', current: activityCurrentMonth, previous: activityPreviousMonth });
+  }
+  if (hasScore7dCompare) {
+    comparisonData.push({ label: 'Score 7d', current: Math.round(scoreCurrentWeek), previous: Math.round(scorePreviousWeek) });
+  }
+  if (hasScore30dCompare) {
+    comparisonData.push({ label: 'Score 30d', current: Math.round(scoreCurrentMonth), previous: Math.round(scorePreviousMonth) });
+  }
 
   const activityByDate = new Map<string, number>();
   for (let i = 0; i < 35; i++) {

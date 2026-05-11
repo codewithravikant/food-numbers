@@ -20,6 +20,7 @@ import {
   DEFAULT_HOME_INSIGHT_TEXT,
 } from '@/lib/daily-top-actions-default';
 import { hasOpenAIKey } from '@/lib/ai/openai-client';
+import type { DailyPlanFallbackReason } from '@/lib/ai/insight-generator';
 
 const STALE_NO_KEY_INSIGHT_HINT = 'add openrouter_api_key';
 
@@ -107,7 +108,40 @@ export default async function HomePage() {
     if (activeInsight.modelUsed === 'cached_response_v1') {
       return { label: 'Cached AI', tone: 'cached' as const };
     }
+
+    const fb = recs?.fallbackReason as DailyPlanFallbackReason | undefined;
+    if (fb === 'no_model') {
+      return { label: 'Model missing', tone: 'warning' as const };
+    }
+    if (fb === 'auth_error') {
+      return { label: 'Key rejected', tone: 'warning' as const };
+    }
+    if (fb === 'rate_limit') {
+      return { label: 'Provider rate limit', tone: 'warning' as const };
+    }
+    if (fb === 'network') {
+      return { label: 'Provider unreachable', tone: 'offline' as const };
+    }
+    if (fb === 'parse_error') {
+      return { label: 'AI parse error', tone: 'warning' as const };
+    }
+    if (fb === 'guardrail') {
+      return { label: 'Safety guard', tone: 'warning' as const };
+    }
+    if (fb === 'invalid_model') {
+      return { label: 'Model mismatch', tone: 'warning' as const };
+    }
+    if (fb === 'truncated') {
+      return { label: 'Provider truncated', tone: 'warning' as const };
+    }
+    if (fb === 'privacy') {
+      return { label: 'AI off (privacy)', tone: 'offline' as const };
+    }
+
     const lowerText = activeInsight.insightText.toLowerCase();
+    if (lowerText.includes('model is not configured') || lowerText.includes('openrouter_model or openai_model')) {
+      return { label: 'Model missing', tone: 'warning' as const };
+    }
     if (lowerText.includes('not compatible')) {
       return { label: 'Model mismatch', tone: 'warning' as const };
     }
@@ -116,6 +150,21 @@ export default async function HomePage() {
     }
     if (lowerText.includes('privacy settings')) {
       return { label: 'AI off (privacy)', tone: 'offline' as const };
+    }
+    if (lowerText.includes('rejected the api key') || lowerText.includes('unauthorized')) {
+      return { label: 'Key rejected', tone: 'warning' as const };
+    }
+    if (lowerText.includes('rate-limited') || lowerText.includes('quota')) {
+      return { label: 'Provider rate limit', tone: 'warning' as const };
+    }
+    if (lowerText.includes('could not reach the ai provider')) {
+      return { label: 'Provider unreachable', tone: 'offline' as const };
+    }
+    if (lowerText.includes('could not parse as json')) {
+      return { label: 'AI parse error', tone: 'warning' as const };
+    }
+    if (lowerText.includes('safety validation')) {
+      return { label: 'Safety guard', tone: 'warning' as const };
     }
     if (lowerText.includes(STALE_NO_KEY_INSIGHT_HINT)) {
       if (hasOpenAIKey()) {
