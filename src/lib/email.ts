@@ -291,26 +291,6 @@ function smtpEhloHostname(): string {
   return 'localhost';
 }
 
-function smtpErrorCode(err: unknown): string | undefined {
-  if (!err || typeof err !== 'object') return undefined;
-  return (err as { code?: string }).code;
-}
-
-function isLikelyTransientSmtpNetworkError(err: unknown): boolean {
-  const codes = new Set<string>();
-  const add = (e: unknown) => {
-    const c = smtpErrorCode(e);
-    if (c) codes.add(c);
-  };
-  add(err);
-  if (err && typeof err === 'object' && 'errors' in err && Array.isArray((err as AggregateError).errors)) {
-    for (const e of (err as AggregateError).errors) add(e);
-  }
-  return [...codes].some((c) =>
-    ['ETIMEDOUT', 'ECONNRESET', 'ENETUNREACH', 'EHOSTUNREACH', 'ECONNREFUSED', 'ESOCKETTIMEDOUT'].includes(c)
-  );
-}
-
 type SmtpTransportMode = 'implicitTls' | 'startTls';
 
 async function sendSmtpSession(
@@ -468,7 +448,6 @@ async function sendViaSmtp(
   const pass = process.env.SMTP_PASS as string;
   const portRaw = process.env.SMTP_PORT?.trim();
   const parsedPort = portRaw ? Number(portRaw) : NaN;
-  const noFallback = process.env.SMTP_NO_FALLBACK === 'true';
 
   const startTls = (p: number) =>
     sendSmtpSession(to, subject, html, inlineLogo, host, user, pass, p, 'startTls');
@@ -482,12 +461,14 @@ async function sendViaSmtp(
   }
 
   if (parsedPort === 465) {
-    try {
-      await implicitTls(465);
-    } catch (e) {
-      if (noFallback || !isLikelyTransientSmtpNetworkError(e)) throw e;
-      await startTls(587);
-    }
+    await implicitTls(465);
+    // Resend / second-port fallback disabled — avoids ~2× SMTP timeout on failure. To retry 587 after 465:
+    // try {
+    //   await implicitTls(465);
+    // } catch (e) {
+    //   if (!isLikelyTransientSmtpNetworkError(e)) throw e;
+    //   await startTls(587);
+    // }
     return;
   }
 
@@ -496,13 +477,15 @@ async function sendViaSmtp(
     return;
   }
 
-  // No SMTP_PORT: try 587 first (PaaS-friendly), then implicit TLS on 465.
-  try {
-    await startTls(587);
-  } catch (e) {
-    if (noFallback || !isLikelyTransientSmtpNetworkError(e)) throw e;
-    await implicitTls(465);
-  }
+  // No SMTP_PORT: submission on 587 only (set SMTP_PORT=465 explicitly if you need implicit TLS).
+  await startTls(587);
+  // Second attempt on 465 disabled (was doubling wait on Railway timeouts). Re-enable with:
+  // try {
+  //   await startTls(587);
+  // } catch (e) {
+  //   if (!isLikelyTransientSmtpNetworkError(e)) throw e;
+  //   await implicitTls(465);
+  // }
 }
 
 async function sendEmailWithTemplate(

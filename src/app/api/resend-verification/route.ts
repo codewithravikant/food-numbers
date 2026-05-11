@@ -72,7 +72,7 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           error:
-            'Email could not be sent. Configure RESEND_API_KEY or SMTP in .env, or try again later.',
+            'Email could not be sent. Check SMTP_HOST, SMTP_PORT (587 recommended), SMTP_USER, SMTP_PASS, and EMAIL_FROM on the server.',
         },
         { status: 503 }
       );
